@@ -15,6 +15,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/helixml/helix/api/pkg/config"
 	"github.com/helixml/helix/api/pkg/controller"
 	"github.com/helixml/helix/api/pkg/data"
 	"github.com/helixml/helix/api/pkg/filestore"
@@ -698,8 +699,24 @@ func (apiServer *HelixAPIServer) updateSessionMeta(_ http.ResponseWriter, req *h
 }
 
 func (apiServer *HelixAPIServer) isAdmin(req *http.Request) bool {
-	// TODO: This logic seems duplicated? Assuming auth middleware ran before this, user should be set and `admin` property populated
-	return getRequestUser(req).Admin
+	auth := apiServer.authMiddleware
+
+	switch auth.cfg.adminUserSrc {
+	case config.AdminSrcTypeEnv:
+		user := getRequestUser(req)
+		return auth.isUserAdmin(user.ID)
+	case config.AdminSrcTypeJWT:
+		token := getRequestToken(req)
+		if token == "" {
+			return false
+		}
+		jwtToken, err := auth.authenticator.ValidateUserToken(context.Background(), token)
+		if err != nil {
+			return false
+		}
+		return auth.isTokenAdmin(jwtToken)
+	}
+	return false
 }
 
 // admin is required by the auth middleware
